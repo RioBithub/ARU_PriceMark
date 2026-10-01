@@ -1,6 +1,6 @@
 #=========================================================================#
 # ARU PriceMark - HestiaCP Nginx template (HTTP)                          #
-# Proxies pricemark.aruraharaja.co.id to Node.js on 127.0.0.1:3300       #
+# Proxies pricemark.aruraharja.co.id to Node.js on 127.0.0.1:3300       #
 #=========================================================================#
 
 server {
