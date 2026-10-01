@@ -1,6 +1,6 @@
 # ARU PriceMark
 
-Web ringan untuk membandingkan proposal/barang/jasa dengan harga pasar menggunakan Gemini API + Google Search grounding.
+Web ringan untuk membandingkan proposal/barang/jasa dengan harga pasar menggunakan Gemini API + live web search.
 
 ## Fitur
 - Frontend HTML/CSS/JavaScript biasa (tanpa Next.js/React).
@@ -28,7 +28,9 @@ APP_PASSWORD=...
 SESSION_SECRET=...
 SESSION_DAYS=7
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
+SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=...
 MAX_UPLOAD_MB=20
 MAX_COMPARABLES=12
 ```
@@ -65,3 +67,9 @@ pm2 restart aru-pricemark --update-env
 - Jangan commit `.env`.
 - Free tier Gemini dapat memiliki kebijakan penggunaan data yang berbeda dari paid tier; jangan kirim dokumen rahasia sebelum kebijakan internal menyetujuinya.
 - `history.json` berisi hasil analisis dan input ringkas; batasi permission folder project sesuai kebutuhan.
+
+
+## Search provider
+Untuk deployment gratis, gunakan `SEARCH_PROVIDER=tavily` dan isi `TAVILY_API_KEY`. Gemini 3.8 Flash dipakai untuk membaca/menormalisasi dokumen, sedangkan Tavily dipakai untuk pencarian web aktual.
+
+Jika project Gemini sudah memiliki billing dan Google Search Grounding aktif, `SEARCH_PROVIDER=gemini` dapat digunakan tanpa Tavily.
