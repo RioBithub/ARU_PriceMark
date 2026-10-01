@@ -79,8 +79,10 @@ elif [[ "${WEB_SYSTEM:-}" == "nginx" ]]; then
     DEST="$HESTIA/data/templates/web/nginx"
   fi
 
-  install -m 0644 "$TPL_SRC" "$DEST/pricemark.tpl"
-  install -m 0644 "$STPL_SRC" "$DEST/pricemark.stpl"
+  # Nginx-only Hestia uses web_port/web_ssl_port instead of proxy_port/proxy_ssl_port.
+  sed 's/%proxy_port%/%web_port%/g' "$TPL_SRC" > "$DEST/pricemark.tpl"
+  sed 's/%proxy_ssl_port%/%web_ssl_port%/g' "$STPL_SRC" > "$DEST/pricemark.stpl"
+  chmod 0644 "$DEST/pricemark.tpl" "$DEST/pricemark.stpl"
 
   echo "Memasang PriceMark sebagai Hestia Nginx web template..."
   "$BIN/v-change-web-domain-tpl" "$OWNER" "$DOMAIN" pricemark no
