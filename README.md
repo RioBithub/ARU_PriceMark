@@ -29,6 +29,7 @@ SESSION_SECRET=...
 SESSION_DAYS=7
 GEMINI_API_KEY=...
 GEMINI_MODEL=gemini-3.8-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 SEARCH_PROVIDER=tavily
 TAVILY_API_KEY=...
 MAX_UPLOAD_MB=20
@@ -73,3 +74,7 @@ pm2 restart aru-pricemark --update-env
 Untuk deployment gratis, gunakan `SEARCH_PROVIDER=tavily` dan isi `TAVILY_API_KEY`. Gemini 3.8 Flash dipakai untuk membaca/menormalisasi dokumen, sedangkan Tavily dipakai untuk pencarian web aktual.
 
 Jika project Gemini sudah memiliki billing dan Google Search Grounding aktif, `SEARCH_PROVIDER=gemini` dapat digunakan tanpa Tavily.
+
+
+### Fallback Gemini
+PriceMark otomatis retry saat Gemini mengembalikan high-demand/429/503. Jika model utama `gemini-3.8-flash` tetap penuh, backend otomatis mencoba `gemini-3.5-flash-lite`.
