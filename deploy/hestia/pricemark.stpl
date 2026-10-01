@@ -1,0 +1,58 @@
+#=========================================================================#
+# ARU PriceMark - HestiaCP Nginx template (HTTPS)                         #
+# Proxies pricemark.aruraharaja.co.id to Node.js on 127.0.0.1:3300       #
+#=========================================================================#
+
+server {
+    listen %ip%:%proxy_ssl_port% ssl;
+    server_name %domain_idn% %alias_idn%;
+
+    error_log /var/log/%web_system%/domains/%domain%.error.log error;
+    access_log /var/log/%web_system%/domains/%domain%.log combined;
+    access_log /var/log/%web_system%/domains/%domain%.bytes bytes;
+
+    ssl_certificate %ssl_pem%;
+    ssl_certificate_key %ssl_key%;
+
+    # Hestia anti-replay handling for TLS 1.3 0-RTT.
+    if ($anti_replay = 307) { return 307 https://$host$request_uri; }
+    if ($anti_replay = 425) { return 425; }
+
+    include %home%/%user%/conf/web/%domain%/nginx.hsts.conf*;
+
+    # Keep Let's Encrypt HTTP-01 path usable if requested over HTTPS too.
+    location ^~ /.well-known/acme-challenge/ {
+        root %sdocroot%;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+    location ~ /\.(?!well-known/) {
+        deny all;
+        return 404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3300;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_cache_bypass $http_upgrade;
+
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+        client_max_body_size 25m;
+    }
+
+    location /error/ {
+        alias %home%/%user%/web/%domain%/document_errors/;
+    }
+
+    include %home%/%user%/conf/web/%domain%/nginx.ssl.conf_*;
+}
