@@ -19,6 +19,8 @@ const API_KEY = process.env.GEMINI_API_KEY || '';
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 const SEARCH_PROVIDER = (process.env.SEARCH_PROVIDER || (TAVILY_API_KEY ? 'tavily' : 'gemini')).toLowerCase();
+const GEMINI_TIMEOUT_MS = Math.max(15000, Number(process.env.GEMINI_TIMEOUT_MS || 90000));
+const SEARCH_TIMEOUT_MS = Math.max(10000, Number(process.env.SEARCH_TIMEOUT_MS || 30000));
 const MAX_MB = Math.min(50, Math.max(1, Number(process.env.MAX_UPLOAD_MB || 20)));
 const MAX_RESULTS = Math.min(25, Math.max(3, Number(process.env.MAX_COMPARABLES || 12)));
 const HISTORY = path.join(__dirname, 'data', 'history.json');
@@ -113,13 +115,23 @@ async function parseFile(file){
 
 async function gemini(body){
   if(!API_KEY) throw new Error('GEMINI_API_KEY belum dikonfigurasi.');
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(API_KEY)}`,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({store:false,...body})
-  });
-  const raw=await r.text(); let data;
-  try{data=JSON.parse(raw);}catch{throw new Error(`Respons Gemini tidak valid (HTTP ${r.status}).`);}
-  if(!r.ok) throw new Error(data?.error?.message||data?.message||`Gemini HTTP ${r.status}`);
-  return data;
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),GEMINI_TIMEOUT_MS);
+  try{
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(API_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({store:false,...body}),
+      signal:ctrl.signal
+    });
+    const raw=await r.text(); let data;
+    try{data=JSON.parse(raw);}catch{throw new Error(`Respons Gemini tidak valid (HTTP ${r.status}).`);}
+    if(!r.ok) throw new Error(data?.error?.message||data?.message||`Gemini HTTP ${r.status}`);
+    return data;
+  }catch(e){
+    if(e?.name==='AbortError') throw new Error(`Gemini timeout setelah ${Math.round(GEMINI_TIMEOUT_MS/1000)} detik.`);
+    throw e;
+  }finally{clearTimeout(timer);}
 }
 function getText(obj){
   if(typeof obj?.output_text==='string') return obj.output_text;
@@ -150,7 +162,7 @@ Teks user: ${text||'(kosong)'}
 Teks hasil ekstraksi file: ${file.text||'(tidak ada)'}
 Jangan mengarang spesifikasi yang tidak tersedia. Buat query pencarian yang spesifik.`;
   const input=file.parts.length?[{type:'text',text:prompt},...file.parts]:prompt;
-  const r=await gemini({model:MODEL,input,generation_config:{temperature:0.05,max_output_tokens:3000}});
+  const r=await gemini({model:MODEL,input,generation_config:{temperature:0.05,max_output_tokens:2200,thinking_level:'low'}});
   const data=parseJson(getText(r));
   data.title=clean(data.title||'Analisis harga');
   data.summary=clean(data.summary);
@@ -179,14 +191,23 @@ async function tavilySearch(query, market){
   };
   if(market==='indonesia') body.country='indonesia';
 
-  const r=await fetch('https://api.tavily.com/search',{
-    method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'Authorization':`Bearer ${TAVILY_API_KEY}`
-    },
-    body:JSON.stringify(body)
-  });
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),SEARCH_TIMEOUT_MS);
+  let r;
+  try{
+    r=await fetch('https://api.tavily.com/search',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':`Bearer ${TAVILY_API_KEY}`
+      },
+      body:JSON.stringify(body),
+      signal:ctrl.signal
+    });
+  }catch(e){
+    if(e?.name==='AbortError') throw new Error(`Web search timeout setelah ${Math.round(SEARCH_TIMEOUT_MS/1000)} detik.`);
+    throw e;
+  }finally{clearTimeout(timer);}
   const raw=await r.text(); let data;
   try{data=JSON.parse(raw);}catch{throw new Error(`Respons Tavily tidak valid (HTTP ${r.status}).`);}
   if(!r.ok) throw new Error(data?.detail||data?.error?.message||`Tavily HTTP ${r.status}`);
@@ -247,7 +268,7 @@ ${refs||'(tidak ada)'}
 HASIL:
 ${search.text}
 Aturan: source_url hanya boleh URL dari daftar; price angka aktual satu unit/periode; jangan konversi mata uang; match_score 0-100; buang item tanpa harga numerik; maksimal ${MAX_RESULTS} item.`;
-  const r=await gemini({model:MODEL,input:prompt,generation_config:{temperature:0.05,max_output_tokens:8000}});
+  const r=await gemini({model:MODEL,input:prompt,generation_config:{temperature:0.05,max_output_tokens:5000,thinking_level:'low'}});
   return parseJson(getText(r));
 }
 function percentile(a,p){
@@ -282,7 +303,15 @@ function stats(rows,preferred){
 }
 
 const attempts=new Map();
-app.get('/health',(req,res)=>res.json({ok:true,app:'ARU PriceMark',model:MODEL,searchProvider:SEARCH_PROVIDER,time:new Date().toISOString()}));
+app.get('/health',(req,res)=>res.json({
+  ok:true,
+  app:'ARU PriceMark',
+  model:MODEL,
+  searchProvider:SEARCH_PROVIDER,
+  geminiConfigured:Boolean(API_KEY),
+  searchConfigured:SEARCH_PROVIDER==='tavily'?Boolean(TAVILY_API_KEY):Boolean(API_KEY),
+  time:new Date().toISOString()
+}));
 app.get('/api/session',(req,res)=>res.json({authenticated:authed(req)}));
 app.post('/api/login',(req,res)=>{
   const ip=req.ip||'unknown',now=Date.now(),a=attempts.get(ip)||{n:0,until:now+900000};
@@ -308,10 +337,16 @@ app.post('/api/analyze',requireAuth,upload.single('file'),async(req,res,next)=>{
     const category=['auto','product','service'].includes(req.body?.category)?req.body.category:'auto';
     const currency=clean(req.body?.currency||(market==='indonesia'?'IDR':'USD')).toUpperCase();
     const proposalPrice=Number(req.body?.proposalPrice||0)||null;
+    const requestId=crypto.randomBytes(3).toString('hex').toUpperCase();
+    console.log(`[${requestId}] analyze start file=${req.file?.originalname||'-'} market=${market} mode=${mode}`);
     const file=await parseFile(req.file);
+    console.log(`[${requestId}] stage 1/3 extract`);
     const extracted=await extractNeed({text,file,category,proposalPrice,currency});
+    console.log(`[${requestId}] stage 2/3 search provider=${SEARCH_PROVIDER}`);
     const search=await searchMarket(extracted,market,mode);
+    console.log(`[${requestId}] stage 3/3 normalize sources=${search.sources.length}`);
     const norm=await normalize(extracted,search);
+    console.log(`[${requestId}] analyze done`);
     const comparables=sanitize(norm.comparables,search.sources,mode);
     const record={
       id:`PM-${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`,
