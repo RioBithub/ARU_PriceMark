@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Login · ARU PriceMark</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="brand-lockup"><span class="brand-mark">ARU</span><span>PriceMark</span></div>
+      <div class="eyebrow">MARKET INTELLIGENCE</div>
+      <h1>Masuk ke PriceMark</h1>
+      <p class="muted">Akses internal untuk membandingkan proposal, barang, dan jasa dengan harga pasar.</p>
+      <form id="loginForm" class="stack-lg">
+        <label class="field">
+          <span>Password</span>
+          <div class="password-wrap">
+            <input id="password" type="password" autocomplete="current-password" placeholder="Masukkan password" required autofocus />
+            <button class="ghost-btn compact" type="button" id="togglePassword">Lihat</button>
+          </div>
+        </label>
+        <button class="primary-btn full" type="submit">Masuk</button>
+        <p id="loginError" class="error-text" hidden></p>
+      </form>
+      <p class="login-note">Session akan tersimpan di browser, jadi tidak perlu login setiap kali membuka situs.</p>
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const input = document.getElementById('password');
+    const error = document.getElementById('loginError');
+    const toggle = document.getElementById('togglePassword');
+    toggle.onclick = () => { input.type = input.type === 'password' ? 'text' : 'password'; toggle.textContent = input.type === 'password' ? 'Lihat' : 'Sembunyi'; };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); error.hidden = true;
+      const button = form.querySelector('button[type=submit]'); button.disabled = true; button.textContent = 'Memeriksa…';
+      try {
+        const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:input.value}) });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Login gagal.');
+        location.href = '/app';
+      } catch (err) { error.textContent = err.message; error.hidden = false; }
+      finally { button.disabled = false; button.textContent = 'Masuk'; }
+    });
+  </script>
+</body>
+</html>
