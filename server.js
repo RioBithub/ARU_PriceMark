@@ -17,6 +17,7 @@ const SECRET = process.env.SESSION_SECRET || '';
 const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 7));
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite';
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 const SEARCH_PROVIDER = (process.env.SEARCH_PROVIDER || (TAVILY_API_KEY ? 'tavily' : 'gemini')).toLowerCase();
 const GEMINI_TIMEOUT_MS = Math.max(15000, Number(process.env.GEMINI_TIMEOUT_MS || 90000));
@@ -113,25 +114,78 @@ async function parseFile(file){
   throw new Error('Format file belum didukung.');
 }
 
-async function gemini(body){
-  if(!API_KEY) throw new Error('GEMINI_API_KEY belum dikonfigurasi.');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function geminiOnce(body, modelName){
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),GEMINI_TIMEOUT_MS);
   try{
     const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(API_KEY)}`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({store:false,...body}),
+      body:JSON.stringify({store:false,...body,model:modelName}),
       signal:ctrl.signal
     });
     const raw=await r.text(); let data;
-    try{data=JSON.parse(raw);}catch{throw new Error(`Respons Gemini tidak valid (HTTP ${r.status}).`);}
-    if(!r.ok) throw new Error(data?.error?.message||data?.message||`Gemini HTTP ${r.status}`);
+    try{data=JSON.parse(raw);}catch{
+      const e=new Error(`Respons Gemini tidak valid (HTTP ${r.status}).`);
+      e.status=r.status;
+      throw e;
+    }
+    if(!r.ok){
+      const e=new Error(data?.error?.message||data?.message||`Gemini HTTP ${r.status}`);
+      e.status=r.status;
+      e.geminiStatus=data?.error?.status||'';
+      throw e;
+    }
     return data;
   }catch(e){
-    if(e?.name==='AbortError') throw new Error(`Gemini timeout setelah ${Math.round(GEMINI_TIMEOUT_MS/1000)} detik.`);
+    if(e?.name==='AbortError'){
+      const t=new Error(`Gemini timeout setelah ${Math.round(GEMINI_TIMEOUT_MS/1000)} detik.`);
+      t.status=504;
+      throw t;
+    }
     throw e;
   }finally{clearTimeout(timer);}
+}
+
+function isCapacityError(e){
+  const msg=String(e?.message||'').toLowerCase();
+  return e?.status===429 || e?.status===503 ||
+    msg.includes('high demand') || msg.includes('overloaded') ||
+    msg.includes('resource exhausted') || msg.includes('temporarily unavailable');
+}
+
+async function gemini(body){
+  if(!API_KEY) throw new Error('GEMINI_API_KEY belum dikonfigurasi.');
+
+  const primary=body.model||MODEL;
+  const attempts=[
+    {model:primary,delay:0},
+    {model:primary,delay:1500},
+    ...(FALLBACK_MODEL && FALLBACK_MODEL!==primary ? [
+      {model:FALLBACK_MODEL,delay:500},
+      {model:FALLBACK_MODEL,delay:1800}
+    ] : [])
+  ];
+
+  let lastError;
+  for(let i=0;i<attempts.length;i++){
+    const a=attempts[i];
+    if(a.delay) await sleep(a.delay);
+    try{
+      if(i>0) console.warn(`Gemini retry ${i+1}/${attempts.length} using ${a.model}`);
+      const result=await geminiOnce(body,a.model);
+      if(a.model!==primary) console.warn(`Gemini fallback succeeded: ${primary} -> ${a.model}`);
+      return result;
+    }catch(e){
+      lastError=e;
+      if(!isCapacityError(e)) throw e;
+      console.warn(`Gemini capacity error on ${a.model}: ${e.message}`);
+    }
+  }
+
+  throw new Error(`Gemini sedang penuh. Sudah mencoba ${primary}${FALLBACK_MODEL&&FALLBACK_MODEL!==primary?` dan fallback ${FALLBACK_MODEL}`:''}. Silakan coba lagi sebentar.`);
 }
 function getText(obj){
   if(typeof obj?.output_text==='string') return obj.output_text;
