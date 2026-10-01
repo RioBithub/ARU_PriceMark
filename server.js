@@ -16,7 +16,9 @@ const PASSWORD = process.env.APP_PASSWORD || '';
 const SECRET = process.env.SESSION_SECRET || '';
 const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 7));
 const API_KEY = process.env.GEMINI_API_KEY || '';
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
+const SEARCH_PROVIDER = (process.env.SEARCH_PROVIDER || (TAVILY_API_KEY ? 'tavily' : 'gemini')).toLowerCase();
 const MAX_MB = Math.min(50, Math.max(1, Number(process.env.MAX_UPLOAD_MB || 20)));
 const MAX_RESULTS = Math.min(25, Math.max(3, Number(process.env.MAX_COMPARABLES || 12)));
 const HISTORY = path.join(__dirname, 'data', 'history.json');
@@ -164,10 +166,63 @@ function marketInstruction(m){
   if(m==='sea') return 'Prioritaskan Indonesia, Singapura, Malaysia, Thailand, Vietnam, dan Filipina. Pertahankan mata uang asli.';
   return 'Fokus pasar Indonesia dan harga dalam IDR. Prioritaskan vendor/toko yang melayani Indonesia.';
 }
+async function tavilySearch(query, market){
+  if(!TAVILY_API_KEY) throw new Error('TAVILY_API_KEY belum dikonfigurasi.');
+  const body={
+    query: clean(query).slice(0,390),
+    topic:'general',
+    search_depth:'basic',
+    max_results:Math.min(MAX_RESULTS,20),
+    include_answer:false,
+    include_raw_content:false,
+    include_images:false
+  };
+  if(market==='indonesia') body.country='indonesia';
+
+  const r=await fetch('https://api.tavily.com/search',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':`Bearer ${TAVILY_API_KEY}`
+    },
+    body:JSON.stringify(body)
+  });
+  const raw=await r.text(); let data;
+  try{data=JSON.parse(raw);}catch{throw new Error(`Respons Tavily tidak valid (HTTP ${r.status}).`);}
+  if(!r.ok) throw new Error(data?.detail||data?.error?.message||`Tavily HTTP ${r.status}`);
+
+  const rows=Array.isArray(data.results)?data.results:[];
+  const src=rows
+    .filter(x=>x?.url&&/^https?:\/\//i.test(x.url))
+    .map(x=>({title:clean(x.title||x.url),url:x.url}));
+
+  const text=rows.map((x,i)=>[
+    `[${i+1}] ${clean(x.title||'Hasil')}`,
+    `URL: ${x.url||''}`,
+    `CONTENT: ${clean(x.content||'')}`
+  ].join('\n')).join('\n\n');
+
+  return {text,sources:src};
+}
+
 async function searchMarket(extracted,market,mode){
   const modeText=mode==='cheapest'
     ?'Prioritaskan harga TERENDAH yang benar-benar comparable; jangan pilih murah karena speknya berbeda.'
     :mode==='best_match'?'Prioritaskan kecocokan spesifikasi/scope.':'Cari rentang pasar representatif dari murah sampai premium.';
+
+  const searchQuery=[
+    extracted.query,
+    extracted.title,
+    extracted.must_match?.length?`spesifikasi ${extracted.must_match.join(' ')}`:'',
+    market==='indonesia'?'harga Indonesia IDR':market==='sea'?'harga Asia Tenggara':'international price',
+    extracted.kind==='service'?'jasa biaya harga penawaran':'harga jual',
+    mode==='cheapest'?'termurah':''
+  ].filter(Boolean).join(' ').slice(0,390);
+
+  if(SEARCH_PROVIDER==='tavily'){
+    return tavilySearch(searchQuery,market);
+  }
+
   const prompt=`Lakukan riset harga pasar aktual menggunakan Google Search.
 Target: ${extracted.title}
 Ringkasan: ${extracted.summary}
@@ -227,7 +282,7 @@ function stats(rows,preferred){
 }
 
 const attempts=new Map();
-app.get('/health',(req,res)=>res.json({ok:true,app:'ARU PriceMark',model:MODEL,time:new Date().toISOString()}));
+app.get('/health',(req,res)=>res.json({ok:true,app:'ARU PriceMark',model:MODEL,searchProvider:SEARCH_PROVIDER,time:new Date().toISOString()}));
 app.get('/api/session',(req,res)=>res.json({authenticated:authed(req)}));
 app.post('/api/login',(req,res)=>{
   const ip=req.ip||'unknown',now=Date.now(),a=attempts.get(ip)||{n:0,until:now+900000};
