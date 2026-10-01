@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DOMAIN="${1:-pricemark.aruraharaja.co.id}"
+DOMAIN="${1:-pricemark.aruraharja.co.id}"
 APP_PORT="${APP_PORT:-3300}"
 HESTIA="/usr/local/hestia"
 BIN="$HESTIA/bin"
