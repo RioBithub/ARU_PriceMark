@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>ARU PriceMark · Market Price Analyzer</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-lockup"><span class="brand-mark">ARU</span><span>PriceMark</span></div>
+    <div class="top-actions">
+      <span class="status-dot"><i></i> Market Intelligence</span>
+      <button class="ghost-btn" id="logoutBtn">Keluar</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">PROCUREMENT BENCHMARK</div>
+        <h1>Bandingkan harga proposal dengan pasar.</h1>
+        <p>Masukkan kebutuhan secara manual atau upload dokumen. PriceMark membaca spesifikasi, mencari pembanding aktual, lalu menghitung benchmark secara otomatis.</p>
+      </div>
+      <div class="hero-badge"><span>AI</span><b>Gemini + Google Search</b><small>Grounded market research</small></div>
+    </section>
+
+    <section class="workspace-grid">
+      <div class="panel input-panel">
+        <div class="panel-head"><div><span class="step">01</span><h2>Input kebutuhan</h2></div><span class="hint">Teks atau file</span></div>
+        <form id="analyzeForm">
+          <label class="field">
+            <span>Deskripsi barang / jasa / proposal</span>
+            <textarea name="text" rows="7" placeholder="Contoh: Lenovo ThinkPad E14, Core Ultra 5, RAM 16GB, SSD 512GB, qty 20. Harga proposal Rp18.500.000/unit."></textarea>
+          </label>
+
+          <div class="upload-zone" id="dropZone">
+            <input id="fileInput" name="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.docx,.xlsx,.xls,.pptx,.csv,.txt,.md,.json" hidden />
+            <div class="upload-icon">↑</div>
+            <strong>Drop dokumen di sini</strong>
+            <span>atau klik untuk memilih file</span>
+            <small>PDF, gambar, DOCX, Excel, PPTX, CSV, TXT · maks. sesuai konfigurasi server</small>
+            <div id="fileChip" class="file-chip" hidden></div>
+          </div>
+
+          <div class="form-grid three">
+            <label class="field"><span>Market</span><select name="market"><option value="indonesia">🇮🇩 Indonesia</option><option value="sea">Asia Tenggara</option><option value="international">🌎 International</option></select></label>
+            <label class="field"><span>Jenis</span><select name="category"><option value="auto">Auto Detect</option><option value="product">Barang</option><option value="service">Jasa</option></select></label>
+            <label class="field"><span>Mode</span><select name="mode"><option value="market">Harga Pasar</option><option value="cheapest">Termurah Comparable</option><option value="best_match">Paling Sesuai</option></select></label>
+          </div>
+
+          <div class="form-grid two">
+            <label class="field"><span>Harga proposal <em>opsional</em></span><input name="proposalPrice" inputmode="decimal" placeholder="18500000" /></label>
+            <label class="field"><span>Mata uang</span><select name="currency"><option>IDR</option><option>USD</option><option>SGD</option><option>MYR</option><option>AUD</option><option>EUR</option></select></label>
+          </div>
+
+          <button class="primary-btn analyze-btn" type="submit"><span>Analisis Harga Pasar</span><b>→</b></button>
+        </form>
+      </div>
+
+      <aside class="panel side-panel">
+        <div class="panel-head"><div><span class="step">02</span><h2>Riwayat</h2></div><button class="icon-btn" id="refreshHistory" title="Refresh">↻</button></div>
+        <div id="historyList" class="history-list"><div class="empty-state">Belum ada analisis.</div></div>
+      </aside>
+    </section>
+
+    <section id="loadingPanel" class="panel result-panel loading-panel" hidden>
+      <div class="loader"></div><div><h2>Sedang menganalisis pasar…</h2><p id="loadingCopy">Membaca kebutuhan dan menyiapkan pencarian pembanding.</p></div>
+    </section>
+
+    <section id="resultPanel" class="panel result-panel" hidden>
+      <div class="result-title-row">
+        <div><div class="eyebrow">HASIL ANALISIS</div><h2 id="resultTitle">—</h2><p id="resultSummary" class="muted"></p></div>
+        <div class="score-pill"><span id="resultKind">AUTO</span></div>
+      </div>
+
+      <div class="metric-grid" id="metricGrid"></div>
+
+      <div class="section-head"><div><h3>Comparable Market</h3><p>Hanya harga numerik yang berhasil dinormalisasi dari sumber pencarian.</p></div><span id="compareCount" class="hint"></span></div>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>Item / Vendor</th><th>Harga</th><th>Match</th><th>Keterangan</th><th>Sumber</th></tr></thead><tbody id="compareBody"></tbody></table></div>
+
+      <div class="insight-grid">
+        <article class="insight-card"><span>Analisis AI</span><p id="analysisText">—</p></article>
+        <article class="insight-card"><span>Catatan</span><ul id="caveatList"></ul></article>
+      </div>
+      <div class="source-block"><div class="section-head"><div><h3>Sumber grounding</h3><p>URL yang terdeteksi dari hasil Google Search Gemini.</p></div></div><div id="sourceList" class="source-list"></div></div>
+    </section>
+  </main>
+
+  <footer>ARU PriceMark · Lightweight Market Intelligence</footer>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
